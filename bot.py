@@ -74,7 +74,7 @@ def start_handler(message):
                 conn.commit()
             
             kb = types.ReplyKeyboardMarkup(resize_keyboard=True).add("🛑 Suhbatni yakunlash")
-            bot.send_message(uid, f"✨ <b>Siz anonim suhbatga ulandingiz!</b>\n\nMarhamat, xabaringizni yozing. Sizning shaxsingiz sir saqlanadi. 🤫", reply_markup=kb)
+            bot.send_message(uid, f"✨ <b>Siz anonim suhbatga ulandingiz!</b>\n\nMarhamat, xabaringizni yozing.", reply_markup=kb)
             return
 
     # To'liq START matni
@@ -161,7 +161,6 @@ def main_handler(message):
             f"🔗 <b>Sizning havolangiz:</b>\n\n"
             f"{link}\n\n"
             f"Menga anonim xabar yuboring! 🤫\n\n"
-            f"Shaxsingiz sir qoladi, men kim yozganini bilmayman. ✨\n"
             f"👇 Marhamat, yozing:\n"
             f"{link}"
         )
