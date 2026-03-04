@@ -4,9 +4,11 @@ import sqlite3
 import os
 import secrets
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
 # --- KONFIGURATSIYA ---
-TOKEN = "SIZNING_BOT_TOKENINGIZ" 
+load_dotenv()
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7642176910 
 CHANNELS = ["@imloviyku"] 
 DB_NAME = 'imperial_v30.db'
