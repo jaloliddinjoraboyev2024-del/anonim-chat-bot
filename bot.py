@@ -76,13 +76,12 @@ def start_handler(message):
     m = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     m.add("💎 Shaxsiy havola", "👤 Profilim", "ℹ️ Info")
     if uid == ADMIN_ID: m.add("⚙️ Admin Panel")
-    bot.send_message(uid, "🌟 <b>Anonim botga xush kelibsiz!</b>", reply_markup=m)
+    bot.send_message(uid, f"🌟 <b>Salom, {first_name}!</b>\nBotga xush kelibsiz!", reply_markup=m)
 
-# --- ADMIN PANEL CALLBACK ---
+# --- CALLBACKS ---
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     uid = call.from_user.id
-    
     if call.data == "admin_stats" and uid == ADMIN_ID:
         with get_db_connection() as conn:
             total = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
@@ -90,30 +89,26 @@ def callback_handler(call):
 
     elif call.data == "admin_ad" and uid == ADMIN_ID:
         kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_ad"))
-        msg = bot.send_message(ADMIN_ID, "📝 <b>Reklama xabarini (matn/rasm/video) yuboring:</b>", reply_markup=kb)
+        msg = bot.send_message(ADMIN_ID, "📝 <b>Reklama xabarini yuboring:</b>", reply_markup=kb)
         bot.register_next_step_handler(msg, broadcast_ad)
 
     elif call.data == "cancel_ad" and uid == ADMIN_ID:
         bot.clear_step_handler_by_chat_id(chat_id=ADMIN_ID)
-        bot.edit_message_text("❌ <b>Reklama yuborish bekor qilindi.</b>", ADMIN_ID, call.message.message_id)
+        bot.edit_message_text("❌ <b>Reklama bekor qilindi.</b>", ADMIN_ID, call.message.message_id)
 
-# --- REKLAMA FUNKSIYASI ---
+# --- REKLAMA ---
 def broadcast_ad(message):
-    # Agar admin rasm/matn yubormay, "Bekor qilish" tugmasini bossa yoki boshqa buyruq bersa
-    if message.text == "⚙️ Admin Panel" or message.text == "/start":
-        return
-
+    if message.text in ["⚙️ Admin Panel", "/start", "🛑 Suhbatni yakunlash"]: return
     with get_db_connection() as conn:
         users = conn.execute('SELECT id FROM users').fetchall()
-    
-    bot.send_message(ADMIN_ID, "🚀 Reklama tarqatilmoqda...")
+    bot.send_message(ADMIN_ID, "🚀 Yuborilmoqda...")
     count = 0
     for u in users:
         try:
             bot.copy_message(u[0], ADMIN_ID, message.message_id)
             count += 1
         except: pass
-    bot.send_message(ADMIN_ID, f"✅ <b>Reklama {count} ta foydalanuvchiga muvaffaqiyatli yuborildi!</b>")
+    bot.send_message(ADMIN_ID, f"✅ {count} ta odamga yuborildi.")
 
 # --- ASOSIY HANDLER ---
 @bot.message_handler(content_types=['text', 'photo', 'video', 'voice', 'sticker', 'animation', 'video_note'])
@@ -121,13 +116,23 @@ def main_handler(message):
     uid = message.chat.id
     if not check_sub(uid): return
 
-    # 1. Tugmalarni tekshirish
+    # 1. TUGMALAR (Sherikka yo'naltirilmaydi)
     if message.text == "💎 Shaxsiy havola":
         with get_db_connection() as conn:
             token = conn.execute('SELECT link_token FROM users WHERE id = ?', (uid,)).fetchone()[0]
         link = f"https://t.me/{bot.get_me().username}?start={token}"
         kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("♻️ Ulashish", url=f"https://t.me/share/url?url={link}"))
         bot.send_message(uid, f"🔗 <b>Sizning havolangiz:</b>\n\n{link}", reply_markup=kb)
+        return
+
+    elif message.text == "👤 Profilim":
+        with get_db_connection() as conn:
+            u = conn.execute('SELECT full_name, join_date FROM users WHERE id = ?', (uid,)).fetchone()
+        bot.send_message(uid, f"👤 <b>Ism:</b> {u[0]}\n🆔 <b>ID:</b> <code>{uid}</code>\n📅 <b>Sana:</b> {u[1][:10]}")
+        return
+
+    elif message.text == "ℹ️ Info":
+        bot.send_message(uid, "ℹ️ <b>Bu bot orqali anonim xabarlar yuborishingiz mumkin.</b>\nShaxsingiz sir saqlanadi!")
         return
 
     elif message.text == "🛑 Suhbatni yakunlash":
@@ -140,28 +145,25 @@ def main_handler(message):
         return
 
     elif message.text == "⚙️ Admin Panel" and uid == ADMIN_ID:
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"))
-        kb.add(types.InlineKeyboardButton("📢 Reklama tarqatish", callback_data="admin_ad"))
+        kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📊 Statistika", callback_data="admin_stats"),
+                                              types.InlineKeyboardButton("📢 Reklama", callback_data="admin_ad"))
         bot.send_message(uid, "👑 <b>Admin Paneli</b>", reply_markup=kb)
         return
 
-    # 2. Xabar yo'naltirish
+    # 2. XABAR YO'NALTIRISH
     with get_db_connection() as conn:
         res = conn.execute('SELECT partner_id FROM active_chats WHERE user_id = ?', (uid,)).fetchone()
     
     if res:
         p_id = res[0]
         kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✍️ Javob berish", url=f"https://t.me/{bot.get_me().username}?start={uid}"))
-        
         try:
             bot.copy_message(p_id, uid, message.message_id, reply_markup=kb)
             bot.send_message(uid, "✅ Yuborildi!")
             
-            # --- ADMINGA TO'LIQ LOG ---
+            # --- LOG ---
             with get_db_connection() as conn:
                 p_info = conn.execute('SELECT full_name, username FROM users WHERE id = ?', (p_id,)).fetchone()
-            
             s_name = message.from_user.full_name
             s_user = f"@{message.from_user.username}" if message.from_user.username else "Username yo'q"
             
