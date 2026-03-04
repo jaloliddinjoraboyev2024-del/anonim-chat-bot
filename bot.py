@@ -63,13 +63,21 @@ def start_handler(message):
     args = message.text.split()
     if len(args) > 1:
         token_arg = args[1]
-        with get_db_connection() as conn:
-            target = conn.execute('SELECT id FROM users WHERE link_token = ?', (token_arg,)).fetchone()
-        if target and target[0] != uid:
+        target_id = None
+        
+        # Tekshiramiz: bu link_token-mi yoki to'g'ridan-to'g'ri user_id (Javob berish uchun)
+        if token_arg.isdigit():
+            target_id = int(token_arg)
+        else:
             with get_db_connection() as conn:
-                conn.execute('REPLACE INTO active_chats (user_id, partner_id) VALUES (?, ?)', (uid, target[0]))
+                res = conn.execute('SELECT id FROM users WHERE link_token = ?', (token_arg,)).fetchone()
+                if res: target_id = res[0]
+        
+        if target_id and target_id != uid:
+            with get_db_connection() as conn:
+                conn.execute('REPLACE INTO active_chats (user_id, partner_id) VALUES (?, ?)', (uid, target_id))
                 conn.commit()
-            bot.send_message(uid, "✨ <b>Siz anonim suhbatga ulandingiz!</b>\nXabaringizni yozing.", 
+            bot.send_message(uid, "✨ <b>Siz anonim suhbatga ulandingiz!</b>\nMarhamat, xabaringizni yozing.", 
                              reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("🛑 Suhbatni yakunlash"))
             return
 
@@ -108,7 +116,7 @@ def broadcast_ad(message):
             bot.copy_message(u[0], ADMIN_ID, message.message_id)
             count += 1
         except: pass
-    bot.send_message(ADMIN_ID, f"✅ {count} ta odamga yuborildi.")
+    bot.send_message(ADMIN_ID, f"✅ {count} ta foydalanuvchiga yuborildi.")
 
 # --- ASOSIY HANDLER ---
 @bot.message_handler(content_types=['text', 'photo', 'video', 'voice', 'sticker', 'animation', 'video_note'])
@@ -116,23 +124,23 @@ def main_handler(message):
     uid = message.chat.id
     if not check_sub(uid): return
 
-    # 1. TUGMALAR (Sherikka yo'naltirilmaydi)
+    # 1. TUGMALAR
     if message.text == "💎 Shaxsiy havola":
         with get_db_connection() as conn:
             token = conn.execute('SELECT link_token FROM users WHERE id = ?', (uid,)).fetchone()[0]
         link = f"https://t.me/{bot.get_me().username}?start={token}"
-        kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("♻️ Ulashish", url=f"https://t.me/share/url?url={link}"))
+        kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🚀 Do'stlarga ulashish", url=f"https://t.me/share/url?url={link}"))
         bot.send_message(uid, f"🔗 <b>Sizning havolangiz:</b>\n\n{link}", reply_markup=kb)
         return
 
     elif message.text == "👤 Profilim":
         with get_db_connection() as conn:
             u = conn.execute('SELECT full_name, join_date FROM users WHERE id = ?', (uid,)).fetchone()
-        bot.send_message(uid, f"👤 <b>Ism:</b> {u[0]}\n🆔 <b>ID:</b> <code>{uid}</code>\n📅 <b>Sana:</b> {u[1][:10]}")
+        bot.send_message(uid, f"👤 <b>Ism:</b> {u[0]}\n🆔 <b>ID:</b> <code>{uid}</code>")
         return
 
     elif message.text == "ℹ️ Info":
-        bot.send_message(uid, "ℹ️ <b>Bu bot orqali anonim xabarlar yuborishingiz mumkin.</b>\nShaxsingiz sir saqlanadi!")
+        bot.send_message(uid, "ℹ️ <b>Anonim chatbot.</b>\nShaxsingiz sir saqlanadi.")
         return
 
     elif message.text == "🛑 Suhbatni yakunlash":
@@ -156,19 +164,22 @@ def main_handler(message):
     
     if res:
         p_id = res[0]
+        # JAVOB BERISH TUGMASI ENDI TO'G'RI USER_ID BILAN ISHLAYDI
         kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✍️ Javob berish", url=f"https://t.me/{bot.get_me().username}?start={uid}"))
+        
         try:
             bot.copy_message(p_id, uid, message.message_id, reply_markup=kb)
             bot.send_message(uid, "✅ Yuborildi!")
             
-            # --- LOG ---
+            # --- ADMINGA TO'LIQ LOG (Rasm 2 dagi format) ---
             with get_db_connection() as conn:
                 p_info = conn.execute('SELECT full_name, username FROM users WHERE id = ?', (p_id,)).fetchone()
+            
             s_name = message.from_user.full_name
             s_user = f"@{message.from_user.username}" if message.from_user.username else "Username yo'q"
             
             admin_report = (
-                f"📑 <b>XABAR NAZORATI</b>\n"
+                f"📄 <b>XABAR NAZORATI</b>\n"
                 f"━━━━━━━━━━━━━━━\n"
                 f"👤 <b>Yuboruvchi:</b> {s_name}\n"
                 f"🎭 <b>User:</b> {s_user}\n"
@@ -182,6 +193,8 @@ def main_handler(message):
             bot.send_message(ADMIN_ID, admin_report)
             bot.copy_message(ADMIN_ID, uid, message.message_id)
         except: bot.send_message(uid, "❌ Xatolik.")
+    else:
+        bot.send_message(uid, "🧐 Kimga yozmoqchisiz? Havolaga bosing!")
 
 if __name__ == '__main__':
     init_db()
