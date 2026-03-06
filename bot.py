@@ -12,6 +12,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7642176910 
 CHANNELS = ["@imloviyku"] 
 DB_NAME = 'imperial_v30.db'
+PRICE_STARS = 5  # Kimligini bilish narxi (Stars)
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
@@ -24,7 +25,8 @@ def init_db():
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS users 
                           (id INTEGER PRIMARY KEY, username TEXT, full_name TEXT, 
-                          link_token TEXT, join_date DATETIME, ban_until DATETIME)''')
+                          link_token TEXT, join_date DATETIME, ban_until DATETIME,
+                          is_premium INTEGER DEFAULT 0)''')
         cursor.execute('CREATE TABLE IF NOT EXISTS active_chats (user_id INTEGER PRIMARY KEY, partner_id INTEGER)')
         conn.commit()
 
@@ -46,7 +48,7 @@ def is_banned(uid):
             except: return False
     return False
 
-# --- REKLAMA TARQATISH (HAMMA FOYDALANUVCHILARGA) ---
+# --- REKLAMA TARQATISH ---
 def broadcast_ad(message):
     if message.text == "❌ Bekor qilish":
         bot.send_message(ADMIN_ID, "❌ Bekor qilindi.", reply_markup=main_keyboard(ADMIN_ID))
@@ -143,6 +145,19 @@ def callback_handler(call):
             conn.commit()
         bot.send_message(uid, "✨ <b>Marhamat, yozing:</b>", reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("🛑 Suhbatni yakunlash"))
 
+    elif call.data.startswith("reveal_"):
+        # Stars To'lovini yuborish
+        prices = [types.LabeledPrice(label="Kimligini bilish 🕵️", amount=PRICE_STARS)]
+        bot.send_invoice(
+            uid, 
+            title="Shaxsni aniqlash",
+            description="Botdagi barcha anonim xabarlarni kim yozayotganini ko'rish imkonini sotib oling!",
+            invoice_payload="reveal_identity_payload",
+            provider_token="", # Stars uchun bo'sh
+            currency="XTR", 
+            prices=prices
+        )
+
     elif call.data.startswith("report_"):
         rep_id, reporter = call.data.split("_")[1], uid
         kb = types.InlineKeyboardMarkup().add(
@@ -153,7 +168,8 @@ def callback_handler(call):
         bot.answer_callback_query(call.id, "Adminga yuborildi.")
 
     elif call.data.startswith("adm_acc_"):
-        bad_id, reporter = call.data.split("_")[2], call.data.split("_")[3]
+        parts = call.data.split("_")
+        bad_id, reporter = parts[2], parts[3]
         ban_v = datetime.now() + timedelta(minutes=10)
         with get_db_connection() as conn:
             conn.execute('UPDATE users SET ban_until = ? WHERE id = ?', (ban_v, bad_id))
@@ -172,6 +188,19 @@ def callback_handler(call):
         msg = bot.send_message(ADMIN_ID, "📝 <b>Reklama xabarini (matn/rasm/video) yuboring:</b>", reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("❌ Bekor qilish"))
         bot.register_next_step_handler(msg, broadcast_ad)
 
+# --- TO'LOV TASDIQLASH ---
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def checkout(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@bot.message_handler(content_types=['successful_payment'])
+def got_payment(message):
+    uid = message.chat.id
+    with get_db_connection() as conn:
+        conn.execute('UPDATE users SET is_premium = 1 WHERE id = ?', (uid,))
+        conn.commit()
+    bot.send_message(uid, "✅ <b>Tabriklaymiz!</b> Endi sizga kelgan anonim xabarlarda yuboruvchi kimligini ko'rishingiz mumkin.", reply_markup=main_keyboard(uid))
+
 # --- ASOSIY HANDLER ---
 @bot.message_handler(content_types=['text', 'photo', 'video', 'voice', 'sticker', 'animation', 'video_note'])
 def main_handler(message):
@@ -188,8 +217,9 @@ def main_handler(message):
 
     elif message.text == "👤 Profilim":
         with get_db_connection() as conn:
-            user = conn.execute('SELECT join_date FROM users WHERE id = ?', (uid,)).fetchone()
-        bot.send_message(uid, f"👤 <b>Profilingiz:</b>\n\n🆔 ID: <code>{uid}</code>\n📅 Ro'yxatdan o'tdingiz: {user[0]}")
+            user = conn.execute('SELECT join_date, is_premium FROM users WHERE id = ?', (uid,)).fetchone()
+        status = "Premium 💎" if user[1] == 1 else "Oddiy 👤"
+        bot.send_message(uid, f"👤 <b>Profilingiz:</b>\n\n🆔 ID: <code>{uid}</code>\n📅 Sana: {user[0]}\n🌟 Status: {status}")
 
     elif message.text == "ℹ️ Info":
         bot.send_message(uid, "ℹ️ <b>Ushbu bot orqali sizga anonim tarzda xabarlar yuborishlari mumkin.</b>\nShaxsiy havolangizni tarqating va do'stlaringiz fikrini bilib oling!")
@@ -213,18 +243,30 @@ def main_handler(message):
         
         if res:
             p_id = res[0]
+            with get_db_connection() as conn:
+                p_user = conn.execute('SELECT is_premium FROM users WHERE id = ?', (p_id,)).fetchone()
+                p_info_db = conn.execute('SELECT full_name, username FROM users WHERE id = ?', (p_id,)).fetchone()
+
             kb = types.InlineKeyboardMarkup().add(
                 types.InlineKeyboardButton("✍️ Javob berish", callback_data=f"reply_{uid}"), 
                 types.InlineKeyboardButton("⚠️ Shikoyat qilish", callback_data=f"report_{uid}")
             )
+            
+            # Agar qabul qiluvchi Premium bo'lmasa, Kimligini bilish tugmasini qo'shish
+            if not p_user or p_user[0] == 0:
+                kb.add(types.InlineKeyboardButton("🔍 Kimligini bilish (Stars ⭐️)", callback_data=f"reveal_{uid}"))
+
             try:
                 bot.copy_message(p_id, uid, message.message_id, reply_markup=kb)
+                
+                # Agar Premium bo'lsa, kimligini xabar tagida yozish
+                if p_user and p_user[0] == 1:
+                    sender_info = f"🕵️ <b>Yuboruvchi:</b> {message.from_user.full_name} (@{message.from_user.username or 'yoq'})"
+                    bot.send_message(p_id, sender_info)
+
                 bot.send_message(uid, "✅ Yuborildi!")
                 
-                # ADMIN LOG (SIZ SO'RAGAN FORMATDA)
-                with get_db_connection() as conn:
-                    p_info = conn.execute('SELECT full_name, username FROM users WHERE id = ?', (p_id,)).fetchone()
-                
+                # ADMIN LOG
                 log_text = (
                     f"📄 <b>XABAR NAZORATI</b>\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -232,8 +274,8 @@ def main_handler(message):
                     f"🎭 <b>User:</b> @{message.from_user.username or 'yoq'}\n"
                     f"🆔 <b>ID:</b> <code>{uid}</code>\n"
                     f"──────────────────\n"
-                    f"🎯 <b>Qabul qiluvchi:</b> {p_info[0]}\n"
-                    f"🎭 <b>User:</b> @{p_info[1] or 'yoq'}\n"
+                    f"🎯 <b>Qabul qiluvchi:</b> {p_info_db[0]}\n"
+                    f"🎭 <b>User:</b> @{p_info_db[1] or 'yoq'}\n"
                     f"🆔 <b>ID:</b> <code>{p_id}</code>\n"
                     f"━━━━━━━━━━━━━━━━━━"
                 )
@@ -243,4 +285,5 @@ def main_handler(message):
 
 if __name__ == '__main__':
     init_db()
+    print("Bot ishga tushdi...")
     bot.infinity_polling(skip_pending=True)
