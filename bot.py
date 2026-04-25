@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 7642176910 
-CHANNELS = ["@imloviyku"] 
 DB_NAME = 'imperial_v30.db'
 PRICE_STARS = 5  # Kimligini bilish narxi (Stars)
 
@@ -96,11 +95,7 @@ def start_handler(message):
                          (uid, uname, full_name, token, datetime.now()))
         conn.commit()
     
-    if not check_sub(uid):
-        kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Kanalga a'zo bo'lish ➕", url=f"https://t.me/{CHANNELS[0][1:]}"))
-        bot.send_message(uid, "👋 Botdan foydalanish uchun kanalga a'zo bo'ling.", reply_markup=kb)
-        return
-
+    
     args = message.text.split()
     if len(args) > 1:
         token_arg = args[1]
